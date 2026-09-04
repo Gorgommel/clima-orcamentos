@@ -11,6 +11,9 @@ Aplicativo web móvel para criar e acompanhar orçamentos de instalação e manu
 - Captura e envio de fotos pelo celular.
 - Composição de valores de serviço, materiais e mão de obra.
 - Cálculo automático do total estimado.
+- Itens editáveis com quantidade, unidade, valor unitário e subtotal.
+- Condições de pagamento, prazo, inclusões, exclusões e observações editáveis.
+- Geração de proposta comercial em PDF com duas páginas e área de assinaturas.
 - Salvamento e consulta do histórico de orçamentos.
 - Interface responsiva, otimizada para uso em dispositivos móveis.
 
