@@ -122,6 +122,19 @@ body {
   .action-bar { @apply fixed inset-x-0 bottom-0 z-20 border-t bg-background/95 p-4 backdrop-blur; }
   .action-bar p { @apply text-xs text-muted-foreground; }
   .action-bar strong { @apply text-xl font-black; }
+  .history-card { @apply flex w-full items-center justify-between gap-3 rounded-2xl border bg-card p-4 text-left shadow-sm transition hover:border-primary active:scale-[0.99]; }
+  .history-card div { @apply grid gap-1; }
+  .history-card strong { @apply font-bold; }
+  .history-card span { @apply text-xs text-muted-foreground; }
+  .history-card b { @apply whitespace-nowrap text-primary; }
+  .detail-total { @apply flex items-center justify-between rounded-3xl bg-primary p-5 text-primary-foreground; }
+  .detail-total span { @apply text-sm text-cyan-100; }
+  .detail-total strong { @apply text-2xl font-black; }
+  .detail-item { @apply flex items-start justify-between gap-3 border-b py-3 last:border-0; }
+  .detail-item div { @apply grid gap-1; }
+  .detail-item strong { @apply text-sm; }
+  .detail-item span { @apply text-xs text-muted-foreground; }
+  .detail-item b { @apply whitespace-nowrap text-sm text-primary; }
 }
 
 .dark {

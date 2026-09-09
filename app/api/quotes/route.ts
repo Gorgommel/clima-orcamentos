@@ -14,8 +14,13 @@ async function ensureSchema() {
 
 export async function GET() {
   await ensureSchema();
-  const result = await env.DB.prepare("SELECT id, customer_name, service_type, total, created_at FROM quotes ORDER BY created_at DESC LIMIT 100").all();
-  return Response.json({ quotes: result.results });
+  const result = await env.DB.prepare("SELECT id, customer_name, service_type, total, payload, created_at FROM quotes ORDER BY created_at DESC LIMIT 100").all();
+  const quotes = result.results.map((row) => {
+    const record = row as Record<string, unknown>;
+    try { return { ...record, payload: JSON.parse(String(record.payload ?? "{}")) }; }
+    catch { return { ...record, payload: {} }; }
+  });
+  return Response.json({ quotes });
 }
 
 export async function POST(request: Request) {
