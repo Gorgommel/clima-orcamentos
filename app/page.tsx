@@ -10,7 +10,20 @@ import { downloadQuotePdf, QuoteDocument, QuoteItem } from "@/lib/quote-pdf";
 const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const uid = () => crypto.randomUUID();
 const today = new Date().toISOString().slice(0, 10);
-type StoredQuote = { id: string; customer_name: string; total: number; created_at: string; payload: { quote?: QuoteDocument } };
+type LegacyPayload = { customer?: string; phone?: string; address?: string; type?: string; capacity?: string; brand?: string; model?: string; description?: string; materials?: number; labor?: number; basePrice?: number; reason?: string };
+type StoredQuote = { id: string; customer_name: string; total: number; created_at: string; payload: LegacyPayload & { quote?: QuoteDocument } };
+
+function quoteFromStored(stored: StoredQuote): QuoteDocument {
+  if (stored.payload.quote) return stored.payload.quote;
+  const p = stored.payload;
+  const items = [
+    { description: p.description || "Serviço de climatização", quantity: 1, unit: "serviço", unitPrice: Number(p.basePrice || 0) },
+    { description: "Materiais / peças", quantity: 1, unit: "item", unitPrice: Number(p.materials || 0) },
+    { description: "Mão de obra extra", quantity: 1, unit: "serviço", unitPrice: Number(p.labor || 0) },
+  ].filter((item, index) => index === 0 || item.unitPrice > 0).map((item) => ({ ...item, id: uid() }));
+  if (!items.some((item) => item.unitPrice > 0) && stored.total > 0) items[0].unitPrice = stored.total;
+  return { number: `LEG-${stored.id.slice(0, 8).toUpperCase()}`, issueDate: stored.created_at.slice(0, 10), validUntil: "", customer: { name: p.customer || stored.customer_name, document: "", phone: p.phone || "", email: "", address: p.address || "" }, provider: { name: "Clima Serviços", document: "", phone: "", email: "" }, serviceType: p.type === "corrective" ? "Manutenção corretiva" : p.type === "preventive" ? "Manutenção preventiva" : "Instalação de ar-condicionado", equipment: [p.brand, p.model, p.capacity && `${p.capacity} BTU/h`].filter(Boolean).join(" · "), items, paymentTerms: "Não informado no registro original.", executionTerms: "Não informado no registro original.", included: p.description || "", exclusions: "", notes: p.reason || "" };
+}
 
 function freshQuote(): QuoteDocument {
   return {
@@ -40,16 +53,16 @@ export default function Home() {
   async function openHistory() { setSelected(null); setView("history"); setStatus(""); try { await loadHistory(); } catch { setStatus("Não foi possível carregar o histórico."); } }
   async function saveQuote(event: { preventDefault(): void }) {
     event.preventDefault(); const error = validate(); if (error) { setStatus(error); return; }
-    setSaving(true); setStatus(""); downloadQuotePdf(quote);
-    try { const response = await fetch("/api/quotes", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ customer: quote.customer.name, type: "installation", total, quote }) }); if (!response.ok) throw new Error(); await loadHistory(); setView("history"); setStatus("Orçamento salvo no histórico e PDF baixado com sucesso."); }
-    catch { setStatus("O PDF foi baixado, mas não foi possível salvar no histórico agora."); } finally { setSaving(false); }
+    setSaving(true); setStatus("");
+    try { const response = await fetch("/api/quotes", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ customer: quote.customer.name, type: "installation", total, quote }) }); if (!response.ok) throw new Error(); downloadQuotePdf(quote); await loadHistory(); setView("history"); setStatus("Orçamento salvo no histórico e PDF baixado com sucesso."); }
+    catch { setStatus("Não foi possível salvar o orçamento. Nenhum registro foi perdido; tente novamente."); } finally { setSaving(false); }
   }
   function exportPdf() { const error = validate(); if (error) return setStatus(error); downloadQuotePdf(quote); setStatus("PDF profissional gerado com sucesso."); }
-  function duplicate(stored: StoredQuote) { const source = stored.payload.quote; if (!source) return; setQuote({ ...source, number: `CO-${new Date().getFullYear()}-${String(Date.now()).slice(-5)}`, items: source.items.map((item) => ({ ...item, id: uid() })) }); setSelected(null); setView("edit"); setStatus("Cópia criada. Revise os dados antes de salvar."); }
+  function duplicate(stored: StoredQuote) { const source = quoteFromStored(stored); setQuote({ ...source, number: `CO-${new Date().getFullYear()}-${String(Date.now()).slice(-5)}`, items: source.items.map((item) => ({ ...item, id: uid() })) }); setSelected(null); setView("edit"); setStatus("Cópia criada. Revise os dados antes de salvar."); }
 
   return <main className="min-h-screen bg-background pb-28 text-foreground">
     <header className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur"><div className="mx-auto flex h-16 max-w-3xl items-center justify-between px-4"><div className="flex items-center gap-2"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground"><Snowflake className="h-5 w-5" /></span><div><p className="text-sm font-black">Clima Orçamentos</p><p className="text-[11px] text-muted-foreground">Propostas profissionais no celular</p></div></div><Button type="button" variant="ghost" size="sm" onClick={view === "edit" ? openHistory : () => { setSelected(null); setView("edit"); }}>{view === "edit" ? <><History /> Histórico</> : <><Plus /> Novo</>}</Button></div></header>
-    {view === "history" ? <HistoryView quotes={history} selected={selected} status={status} onSelect={setSelected} onClose={() => setSelected(null)} onDownload={(stored) => stored.payload.quote && downloadQuotePdf(stored.payload.quote)} onDuplicate={duplicate} /> :
+    {view === "history" ? <HistoryView quotes={history} selected={selected} status={status} onSelect={setSelected} onClose={() => setSelected(null)} onDownload={(stored) => downloadQuotePdf(quoteFromStored(stored))} onDuplicate={duplicate} /> :
     <form onSubmit={saveQuote} className="mx-auto max-w-3xl space-y-5 px-4 py-5">
       <section className="hero-card"><div><p className="eyebrow">Nova proposta comercial</p><h1>{money.format(total)}</h1><p>Ao salvar, o orçamento entra no histórico e o PDF é baixado.</p></div><ReceiptText className="h-9 w-9 text-cyan-200" /></section>
       <Section step="1" title="Identificação" subtitle="Número, datas e dados de quem presta o serviço"><Grid><Field label="Número da proposta"><Input value={quote.number} onChange={(e) => update("number", e.target.value)} /></Field><Field label="Data de emissão"><Input type="date" value={quote.issueDate} onChange={(e) => update("issueDate", e.target.value)} /></Field><Field label="Válida até"><Input type="date" value={quote.validUntil} onChange={(e) => update("validUntil", e.target.value)} /></Field><Field label="Empresa / profissional"><Input value={quote.provider.name} onChange={(e) => updateParty("provider", "name", e.target.value)} /></Field><Field label="CPF / CNPJ"><Input value={quote.provider.document} onChange={(e) => updateParty("provider", "document", e.target.value)} /></Field><Field label="Telefone"><Input value={quote.provider.phone} onChange={(e) => updateParty("provider", "phone", e.target.value)} /></Field><Field label="E-mail"><Input value={quote.provider.email} onChange={(e) => updateParty("provider", "email", e.target.value)} /></Field></Grid></Section>
@@ -74,7 +87,7 @@ function HistoryView({ quotes, selected, status, onSelect, onClose, onDownload, 
 }
 
 function QuoteDetails({ stored, onClose, onDownload, onDuplicate }: { stored: StoredQuote; onClose: () => void; onDownload: (quote: StoredQuote) => void; onDuplicate: (quote: StoredQuote) => void }) {
-  const detail = stored.payload.quote; if (!detail) return <section className="mx-auto max-w-3xl px-4 py-5"><Button onClick={onClose}>Voltar</Button><p className="mt-4">Este registro antigo não possui dados detalhados.</p></section>;
+  const detail = quoteFromStored(stored);
   const total = detail.items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
   return <section className="mx-auto max-w-3xl space-y-4 px-4 py-5"><div className="flex items-start justify-between"><div><p className="eyebrow text-primary">Detalhes do orçamento</p><h1 className="text-2xl font-black">{detail.customer.name}</h1><p className="text-sm text-muted-foreground">{detail.number} · {detail.issueDate}</p></div><Button variant="ghost" size="icon" onClick={onClose}><X /></Button></div><div className="detail-total"><span>Valor total</span><strong>{money.format(total)}</strong></div><Detail label="Cliente" value={[detail.customer.document, detail.customer.phone, detail.customer.email, detail.customer.address].filter(Boolean).join(" · ")} /><Detail label="Serviço" value={`${detail.serviceType} · ${detail.equipment}`} /><section className="card-section"><h2 className="mb-3 font-black">Itens</h2>{detail.items.map((item) => <div key={item.id} className="detail-item"><div><strong>{item.description}</strong><span>{item.quantity} {item.unit} × {money.format(item.unitPrice)}</span></div><b>{money.format(item.quantity * item.unitPrice)}</b></div>)}</section><Detail label="Pagamento" value={detail.paymentTerms} /><Detail label="Prazo / execução" value={detail.executionTerms} /><Detail label="Itens inclusos" value={detail.included} pre /><Detail label="Não inclusos / exclusões" value={detail.exclusions} pre /><Detail label="Observações" value={detail.notes} /><div className="grid gap-3 sm:grid-cols-2"><Button className="h-12 rounded-2xl" onClick={() => onDownload(stored)}><FileDown /> Baixar PDF novamente</Button><Button variant="outline" className="h-12 rounded-2xl" onClick={() => onDuplicate(stored)}><Copy /> Duplicar e editar</Button></div></section>;
 }
