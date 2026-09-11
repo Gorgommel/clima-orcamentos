@@ -61,7 +61,14 @@ O diagrama usa as convenções clássicas de fluxogramas: terminadores para iní
 flowchart TD
     INICIO(["Início"])
     NOVO["Abrir novo orçamento"]
-    PREENCHER["Preencher identificação, cliente,<br/>itens, valores e condições"]
+    IDENTIFICAR["Preencher identificação e cliente<br/>com digitação orientada"]
+    PADRAO{"Instalação é parede com parede<br/>dentro do padrão de 3 m?"}
+    ESCOLHER["Escolher capacidade e preço-base<br/>pré-configurado"]
+    AVALIAR["Avaliar distância, dreno,<br/>acesso e infraestrutura"]
+    EXTRAS["Selecionar cobranças adicionais<br/>pré-configuradas"]
+    MATERIAL{"Cliente fornece<br/>algum material?"}
+    DESCONTO["Selecionar material e informar<br/>o desconto correspondente"]
+    CONDICOES["Revisar condições, inclusões<br/>e exclusões"]
     VALIDAR{"Dados obrigatórios<br/>estão válidos?"}
     CORRIGIR["Corrigir os campos indicados"]
 
@@ -88,10 +95,15 @@ flowchart TD
     VOLTAR{"Voltar ao histórico?"}
     FIM(["Fim"])
 
-    INICIO --> NOVO --> PREENCHER --> VALIDAR
-    VALIDAR -- "Não" --> CORRIGIR --> PREENCHER
+    INICIO --> NOVO --> IDENTIFICAR --> PADRAO
+    PADRAO -- "Sim" --> ESCOLHER --> MATERIAL
+    PADRAO -- "Não" --> AVALIAR --> EXTRAS --> MATERIAL
+    MATERIAL -- "Sim" --> DESCONTO --> CONDICOES
+    MATERIAL -- "Não" --> CONDICOES
+    CONDICOES --> VALIDAR
+    VALIDAR -- "Não" --> CORRIGIR --> IDENTIFICAR
     VALIDAR -- "Sim" --> SALVAR --> AGUARDAR_SALVAMENTO --> SALVO
-    SALVO -- "Não" --> ERRO --> PREENCHER
+    SALVO -- "Não" --> ERRO --> IDENTIFICAR
     SALVO -- "Sim" --> REGISTRO --> PDF_INICIAL --> AGUARDAR_DOWNLOAD --> HISTORICO
     HISTORICO --> SELECIONAR
     SELECIONAR -- "Não" --> FIM
@@ -99,7 +111,7 @@ flowchart TD
     DETALHES --> NOVO_PDF
     NOVO_PDF -- "Sim" --> PDF_NOVO --> AGUARDAR_NOVO_DOWNLOAD --> DETALHES
     NOVO_PDF -- "Não" --> DUPLICAR
-    DUPLICAR -- "Sim" --> COPIA --> PREENCHER
+    DUPLICAR -- "Sim" --> COPIA --> IDENTIFICAR
     DUPLICAR -- "Não" --> VOLTAR
     VOLTAR -- "Sim" --> HISTORICO
     VOLTAR -- "Não" --> FIM
@@ -124,6 +136,12 @@ flowchart TD
 3. O PDF automático só é gerado depois que a API confirma o salvamento.
 4. Se o salvamento falhar, nenhum PDF é apresentado como se o orçamento estivesse registrado.
 5. O histórico é recarregado após o salvamento para exibir o novo registro.
+6. A instalação padrão parede com parede inclui até 3 metros de tubulação de cobre com isolamento e até 3 metros de cabo PP 4 vias, suportes das unidades interna e externa, fixação, vácuo, testes e orientação de uso.
+7. A mangueira de dreno não está incluída no preço padrão e deve ser adicionada como cobrança separada.
+8. Preços-base: 9.000 BTU/h por R$ 650,00; 12.000 BTU/h por R$ 750,00; 18.000 BTU/h por R$ 850,00; e 22.000 BTU/h por R$ 1.000,00.
+9. Instalações fora do padrão exigem avaliação; cada material ou serviço adicional deve aparecer em linha própria.
+10. Quando o cliente fornece material, o desconto é escolhido em uma opção pronta, informado separadamente e subtraído do total.
+11. Número da proposta aceita somente letras, números e hífen; CPF/CNPJ e telefone aceitam somente dígitos; datas incoerentes, e-mails inválidos, itens incompletos e total negativo impedem a geração e o salvamento.
 6. Os dados persistidos são a fonte utilizada para consultas posteriores.
 7. Registros antigos são normalizados apenas na interface; seus dados armazenados não são sobrescritos.
 8. O botão **Baixar PDF novamente** recria o documento usando o orçamento consultado.
