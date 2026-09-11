@@ -14,18 +14,23 @@ async function ensureSchema() {
 
 export async function GET() {
   await ensureSchema();
-  const result = await env.DB.prepare("SELECT id, customer_name, service_type, total, created_at FROM quotes ORDER BY created_at DESC LIMIT 100").all();
-  return Response.json({ quotes: result.results });
+  const result = await env.DB.prepare("SELECT id, customer_name, service_type, total, payload, created_at FROM quotes ORDER BY created_at DESC LIMIT 100").all();
+  const quotes = result.results.map((row) => {
+    const record = row as Record<string, unknown>;
+    try { return { ...record, payload: JSON.parse(typeof record.payload === "string" ? record.payload : "{}") }; }
+    catch { return { ...record, payload: {} }; }
+  });
+  return Response.json({ quotes });
 }
 
 export async function POST(request: Request) {
   await ensureSchema();
   const body = await request.json() as Record<string, unknown>;
-  const customer = String(body.customer ?? "").trim();
+  const customer = typeof body.customer === "string" ? body.customer.trim() : "";
   if (!customer) return Response.json({ error: "Cliente é obrigatório." }, { status: 400 });
   const id = crypto.randomUUID();
   const createdAt = new Date().toISOString();
   await env.DB.prepare("INSERT INTO quotes (id, customer_name, service_type, total, payload, created_at) VALUES (?, ?, ?, ?, ?, ?)")
-    .bind(id, customer, String(body.type ?? "installation"), Number(body.total ?? 0), JSON.stringify(body), createdAt).run();
+    .bind(id, customer, typeof body.type === "string" ? body.type : "installation", Number(body.total ?? 0), JSON.stringify(body), createdAt).run();
   return Response.json({ id, createdAt }, { status: 201 });
 }

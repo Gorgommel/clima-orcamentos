@@ -1,130 +1,94 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Camera, CheckCircle2, ClipboardCheck, History, Plus, ReceiptText, Save, Snowflake, Wrench } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Copy, FileDown, History, Plus, ReceiptText, Save, Snowflake, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { downloadQuotePdf, QuoteDocument, QuoteItem } from "@/lib/quote-pdf";
 
-type ServiceType = "installation" | "corrective" | "preventive";
-type QuoteSummary = { id: string; customer_name: string; service_type: ServiceType; total: number; created_at: string };
-
-const capacities = [
-  { label: "9.000", price: 700 },
-  { label: "12.000", price: 900 },
-  { label: "18.000", price: 1200 },
-];
-const serviceLabels: Record<ServiceType, string> = { installation: "Instalação", corrective: "Corretiva", preventive: "Preventiva" };
 const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
+const uid = () => crypto.randomUUID();
+const today = new Date().toISOString().slice(0, 10);
+type LegacyPayload = { customer?: string; phone?: string; address?: string; type?: string; capacity?: string; brand?: string; model?: string; description?: string; materials?: number; labor?: number; basePrice?: number; reason?: string };
+type StoredQuote = { id: string; customer_name: string; total: number; created_at: string; payload: LegacyPayload & { quote?: QuoteDocument } };
 
-export default function Home() {
-  const [view, setView] = useState<"new" | "history">("new");
-  const [type, setType] = useState<ServiceType>("installation");
-  const [capacity, setCapacity] = useState(capacities[1]);
-  const [customer, setCustomer] = useState("");
-  const [phone, setPhone] = useState("");
-  const [address, setAddress] = useState("");
-  const [brand, setBrand] = useState("");
-  const [model, setModel] = useState("");
-  const [description, setDescription] = useState("");
-  const [materials, setMaterials] = useState(0);
-  const [labor, setLabor] = useState(0);
-  const [basePrice, setBasePrice] = useState(0);
-  const [reason, setReason] = useState("");
-  const [photos, setPhotos] = useState<File[]>([]);
-  const [history, setHistory] = useState<QuoteSummary[]>([]);
-  const [status, setStatus] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  const total = useMemo(() => (type === "installation" ? capacity.price : basePrice) + materials + labor, [type, capacity, basePrice, materials, labor]);
-
-  useEffect(() => {
-    if (view === "history") fetch("/api/quotes").then((response) => response.json()).then((data) => setHistory(data.quotes ?? [])).catch(() => setStatus("Não foi possível carregar o histórico."));
-  }, [view]);
-
-  async function saveQuote(event: FormEvent) {
-    event.preventDefault();
-    if (!customer.trim()) { setStatus("Informe o nome do cliente."); return; }
-    setSaving(true); setStatus("");
-    try {
-      const photoKeys: string[] = [];
-      for (const photo of photos) {
-        const form = new FormData(); form.append("file", photo);
-        const uploaded = await fetch("/api/uploads", { method: "POST", body: form }).then((response) => response.json());
-        if (uploaded.key) photoKeys.push(uploaded.key);
-      }
-      const response = await fetch("/api/quotes", {
-        method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ customer, phone, address, type, capacity: capacity.label, brand, model, description, materials, labor, basePrice: type === "installation" ? capacity.price : basePrice, reason, total, photos: photoKeys }),
-      });
-      if (!response.ok) throw new Error("save failed");
-      setStatus("Orçamento salvo com sucesso.");
-    } catch { setStatus("Não foi possível salvar agora. Tente novamente."); }
-    finally { setSaving(false); }
-  }
-
-  return (
-    <main className="min-h-screen bg-background pb-28 text-foreground">
-      <header className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur">
-        <div className="mx-auto flex h-16 max-w-2xl items-center justify-between px-4">
-          <div className="flex items-center gap-2"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground"><Snowflake className="h-5 w-5" /></span><div><p className="text-sm font-black">Clima Orçamentos</p><p className="text-[11px] text-muted-foreground">Orçamento técnico no celular</p></div></div>
-          <Button variant="ghost" size="sm" onClick={() => setView(view === "new" ? "history" : "new")}>{view === "new" ? <><History /> Histórico</> : <><Plus /> Novo</>}</Button>
-        </div>
-      </header>
-
-      {view === "history" ? <HistoryView quotes={history} /> : (
-        <form onSubmit={saveQuote} className="mx-auto max-w-2xl space-y-5 px-4 py-5">
-          <div className="grid grid-cols-3 gap-2">
-            <ServiceButton active={type === "installation"} icon={<Snowflake />} label="Instalação" onClick={() => setType("installation")} />
-            <ServiceButton active={type === "corrective"} icon={<Wrench />} label="Corretiva" onClick={() => setType("corrective")} />
-            <ServiceButton active={type === "preventive"} icon={<ClipboardCheck />} label="Preventiva" onClick={() => setType("preventive")} />
-          </div>
-
-          <section className="rounded-3xl bg-primary p-5 text-primary-foreground shadow-lg shadow-cyan-950/10">
-            <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan-100">{serviceLabels[type]}</p><h1 className="mt-2 text-3xl font-black tracking-tight">{money.format(total)}</h1><p className="mt-1 text-sm text-cyan-100">{type === "installation" ? "Kit padrão de até 3 metros incluso" : "Materiais e mão de obra detalhados"}</p></div><ReceiptText className="h-8 w-8 text-cyan-200" /></div>
-          </section>
-
-          <section className="card-section">
-            <SectionTitle step="1" title="Cliente e local" subtitle="Quem receberá o orçamento?" />
-            <div className="grid gap-3 sm:grid-cols-2"><Input value={customer} onChange={(e) => setCustomer(e.target.value)} aria-label="Nome do cliente" placeholder="Nome do cliente" /><Input value={phone} onChange={(e) => setPhone(e.target.value)} aria-label="Telefone" inputMode="tel" placeholder="WhatsApp" /><Input value={address} onChange={(e) => setAddress(e.target.value)} className="sm:col-span-2" aria-label="Endereço" placeholder="Endereço do serviço" /></div>
-          </section>
-
-          <section className="card-section">
-            <SectionTitle step="2" title="Equipamento" subtitle="Identificação do aparelho" />
-            {type === "installation" && <div className="mb-3 grid grid-cols-3 gap-2">{capacities.map((item) => <button key={item.label} type="button" onClick={() => setCapacity(item)} className={`capacity ${capacity.label === item.label ? "capacity-active" : ""}`}><strong>{item.label}</strong><span>BTUs</span><small>{money.format(item.price)}</small></button>)}</div>}
-            <div className="grid gap-3 sm:grid-cols-2"><Input value={brand} onChange={(e) => setBrand(e.target.value)} aria-label="Marca" placeholder="Marca (ex.: LG, Samsung)" /><Input value={model} onChange={(e) => setModel(e.target.value)} aria-label="Modelo" placeholder="Modelo ou número de série" /></div>
-          </section>
-
-          <section className="card-section">
-            <SectionTitle step="3" title={type === "corrective" ? "Diagnóstico" : type === "preventive" ? "Checklist da preventiva" : "Detalhes da instalação"} subtitle={type === "installation" ? "Informe metragem e condição do local" : "Descreva o serviço com clareza"} />
-            <Textarea value={description} onChange={(e) => setDescription(e.target.value)} className="min-h-24" placeholder={type === "corrective" ? "Defeito relatado, diagnóstico e solução proposta..." : type === "preventive" ? "Limpeza, filtros, dreno, elétrica, pressão, testes..." : "Metragem real, suporte, dreno, acesso e observações..."} />
-          </section>
-
-          <section className="card-section">
-            <SectionTitle step="4" title="Fotos" subtitle="Registre equipamento, problema e acesso" />
-            <label className="photo-drop"><Camera className="h-6 w-6" /><span>{photos.length ? `${photos.length} foto(s) selecionada(s)` : "Tirar ou adicionar fotos"}</span><input className="sr-only" type="file" accept="image/*" capture="environment" multiple onChange={(e) => setPhotos(Array.from(e.target.files ?? []))} /></label>
-          </section>
-
-          <section className="card-section">
-            <SectionTitle step="5" title="Valores" subtitle="Separe materiais e mão de obra" />
-            <div className="space-y-3">
-              {type !== "installation" && <MoneyRow label="Serviço base" value={basePrice} onChange={setBasePrice} />}
-              <MoneyRow label="Materiais / peças" value={materials} onChange={setMaterials} />
-              <MoneyRow label="Mão de obra extra" value={labor} onChange={setLabor} />
-              <Input value={reason} onChange={(e) => setReason(e.target.value)} aria-label="Justificativa dos adicionais" placeholder="Fornecedor, frete, altura, acesso ou outro motivo" />
-            </div>
-          </section>
-
-          {status && <p className={`rounded-2xl p-3 text-center text-sm font-semibold ${status.includes("sucesso") ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-900"}`}>{status}</p>}
-
-          <footer className="fixed inset-x-0 bottom-0 z-20 border-t bg-background/95 p-4 backdrop-blur"><div className="mx-auto flex max-w-2xl items-center gap-4"><div className="min-w-0 flex-1"><p className="text-xs text-muted-foreground">Total estimado</p><p className="text-xl font-black">{money.format(total)}</p></div><Button type="submit" disabled={saving} size="lg" className="h-12 rounded-2xl px-6 font-bold"><Save /> {saving ? "Salvando..." : "Salvar orçamento"}</Button></div></footer>
-        </form>
-      )}
-    </main>
-  );
+function quoteFromStored(stored: StoredQuote): QuoteDocument {
+  if (stored.payload.quote) return stored.payload.quote;
+  const p = stored.payload;
+  const items = [
+    { description: p.description || "Serviço de climatização", quantity: 1, unit: "serviço", unitPrice: Number(p.basePrice || 0) },
+    { description: "Materiais / peças", quantity: 1, unit: "item", unitPrice: Number(p.materials || 0) },
+    { description: "Mão de obra extra", quantity: 1, unit: "serviço", unitPrice: Number(p.labor || 0) },
+  ].filter((item, index) => index === 0 || item.unitPrice > 0).map((item) => ({ ...item, id: uid() }));
+  if (!items.some((item) => item.unitPrice > 0) && stored.total > 0) items[0].unitPrice = stored.total;
+  return { number: `LEG-${stored.id.slice(0, 8).toUpperCase()}`, issueDate: stored.created_at.slice(0, 10), validUntil: "", customer: { name: p.customer || stored.customer_name, document: "", phone: p.phone || "", email: "", address: p.address || "" }, provider: { name: "Clima Serviços", document: "", phone: "", email: "" }, serviceType: p.type === "corrective" ? "Manutenção corretiva" : p.type === "preventive" ? "Manutenção preventiva" : "Instalação de ar-condicionado", equipment: [p.brand, p.model, p.capacity && `${p.capacity} BTU/h`].filter(Boolean).join(" · "), items, paymentTerms: "Não informado no registro original.", executionTerms: "Não informado no registro original.", included: p.description || "", exclusions: "", notes: p.reason || "" };
 }
 
-function SectionTitle({ step, title, subtitle }: { step: string; title: string; subtitle: string }) { return <div className="section-heading"><span className="step">{step}</span><div><h2>{title}</h2><p>{subtitle}</p></div></div>; }
-function ServiceButton({ active, icon, label, onClick }: { active: boolean; icon: React.ReactNode; label: string; onClick: () => void }) { return <button type="button" onClick={onClick} className={`service-button ${active ? "service-active" : ""}`}>{icon}<span>{label}</span></button>; }
-function MoneyRow({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) { return <label className="money-row"><span>{label}</span><Input aria-label={`Valor de ${label}`} type="number" inputMode="decimal" min="0" value={value || ""} placeholder="R$ 0,00" onChange={(e) => onChange(Number(e.target.value))} /></label>; }
-function HistoryView({ quotes }: { quotes: QuoteSummary[] }) { return <div className="mx-auto max-w-2xl space-y-4 px-4 py-5"><div><h1 className="text-2xl font-black">Orçamentos salvos</h1><p className="text-sm text-muted-foreground">Histórico dos atendimentos</p></div>{quotes.length === 0 ? <div className="card-section py-12 text-center"><History className="mx-auto mb-3 text-muted-foreground" /><p className="font-bold">Nenhum orçamento salvo</p><p className="text-sm text-muted-foreground">Os próximos aparecerão aqui.</p></div> : quotes.map((quote) => <article key={quote.id} className="card-section flex items-center justify-between gap-3"><div><p className="font-bold">{quote.customer_name}</p><p className="text-xs text-muted-foreground">{serviceLabels[quote.service_type]} · {new Date(quote.created_at).toLocaleDateString("pt-BR")}</p></div><div className="text-right"><p className="font-black text-primary">{money.format(quote.total)}</p><CheckCircle2 className="ml-auto mt-1 h-4 w-4 text-emerald-600" /></div></article>)}</div>; }
+function freshQuote(): QuoteDocument {
+  return {
+    number: `CO-${new Date().getFullYear()}-${String(Date.now()).slice(-5)}`, issueDate: today,
+    validUntil: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
+    customer: { name: "", document: "", phone: "", email: "", address: "" },
+    provider: { name: "Clima Serviços", document: "", phone: "", email: "" },
+    serviceType: "Instalação de ar-condicionado", equipment: "Split Hi-Wall",
+    items: [{ id: uid(), description: "Instalação de ar-condicionado split até 12.000 BTU/h", quantity: 1, unit: "un", unitPrice: 900 }, { id: uid(), description: "Kit de materiais para instalação até 3 metros", quantity: 1, unit: "kit", unitPrice: 350 }],
+    paymentTerms: "50% na aprovação e 50% após a conclusão do serviço.",
+    executionTerms: "Agendamento em até 5 dias úteis após a aprovação, sujeito à disponibilidade.",
+    included: "Tubulação de cobre e isolamento térmico até 3 metros\nCabo de interligação entre as unidades até 3 metros\nSuporte para a unidade externa\nMangueira de dreno até 3 metros\nFixação, vácuo, testes e orientação de uso",
+    exclusions: "Ponto elétrico, disjuntor e adequações na rede elétrica\nCortes, rasgos, pintura, gesso, marcenaria ou acabamento civil\nAndaimes, plataformas ou acesso especial\nDesinstalação e descarte de equipamento existente\nServiços ou materiais além dos limites descritos nos itens",
+    notes: "Valores consideram acesso livre e condições normais de instalação. Qualquer serviço adicional será informado e aprovado antes da execução.",
+  };
+}
+
+export default function Home() {
+  const [quote, setQuote] = useState(freshQuote); const [status, setStatus] = useState(""); const [saving, setSaving] = useState(false);
+  const [view, setView] = useState<"edit" | "history">("edit"); const [history, setHistory] = useState<StoredQuote[]>([]); const [selected, setSelected] = useState<StoredQuote | null>(null);
+  const total = useMemo(() => quote.items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0), [quote.items]);
+  const update = <K extends keyof QuoteDocument>(key: K, value: QuoteDocument[K]) => setQuote((current) => ({ ...current, [key]: value }));
+  const updateParty = (party: "customer" | "provider", key: string, value: string) => setQuote((current) => ({ ...current, [party]: { ...current[party], [key]: value } }));
+  const updateItem = (id: string, patch: Partial<QuoteItem>) => update("items", quote.items.map((item) => item.id === id ? { ...item, ...patch } : item));
+  const validate = () => !quote.customer.name.trim() ? "Informe o nome do cliente." : quote.items.some((item) => !item.description.trim() || item.quantity <= 0) || !quote.items.length ? "Revise os itens e suas quantidades." : "";
+  async function loadHistory() { const data = await fetch("/api/quotes").then((response) => response.json()) as { quotes?: StoredQuote[] }; setHistory(data.quotes ?? []); }
+  async function openHistory() { setSelected(null); setView("history"); setStatus(""); try { await loadHistory(); } catch { setStatus("Não foi possível carregar o histórico."); } }
+  async function saveQuote(event: { preventDefault(): void }) {
+    event.preventDefault(); const error = validate(); if (error) { setStatus(error); return; }
+    setSaving(true); setStatus("");
+    try { const response = await fetch("/api/quotes", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ customer: quote.customer.name, type: "installation", total, quote }) }); if (!response.ok) throw new Error(); downloadQuotePdf(quote); await loadHistory(); setView("history"); setStatus("Orçamento salvo no histórico e PDF baixado com sucesso."); }
+    catch { setStatus("Não foi possível salvar o orçamento. Nenhum registro foi perdido; tente novamente."); } finally { setSaving(false); }
+  }
+  function exportPdf() { const error = validate(); if (error) return setStatus(error); downloadQuotePdf(quote); setStatus("PDF profissional gerado com sucesso."); }
+  function duplicate(stored: StoredQuote) { const source = quoteFromStored(stored); setQuote({ ...source, number: `CO-${new Date().getFullYear()}-${String(Date.now()).slice(-5)}`, items: source.items.map((item) => ({ ...item, id: uid() })) }); setSelected(null); setView("edit"); setStatus("Cópia criada. Revise os dados antes de salvar."); }
+
+  return <main className="min-h-screen bg-background pb-28 text-foreground">
+    <header className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur"><div className="mx-auto flex h-16 max-w-3xl items-center justify-between px-4"><div className="flex items-center gap-2"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground"><Snowflake className="h-5 w-5" /></span><div><p className="text-sm font-black">Clima Orçamentos</p><p className="text-[11px] text-muted-foreground">Propostas profissionais no celular</p></div></div><Button type="button" variant="ghost" size="sm" onClick={view === "edit" ? openHistory : () => { setSelected(null); setView("edit"); }}>{view === "edit" ? <><History /> Histórico</> : <><Plus /> Novo</>}</Button></div></header>
+    {view === "history" ? <HistoryView quotes={history} selected={selected} status={status} onSelect={setSelected} onClose={() => setSelected(null)} onDownload={(stored) => downloadQuotePdf(quoteFromStored(stored))} onDuplicate={duplicate} /> :
+    <form onSubmit={saveQuote} className="mx-auto max-w-3xl space-y-5 px-4 py-5">
+      <section className="hero-card"><div><p className="eyebrow">Nova proposta comercial</p><h1>{money.format(total)}</h1><p>Ao salvar, o orçamento entra no histórico e o PDF é baixado.</p></div><ReceiptText className="h-9 w-9 text-cyan-200" /></section>
+      <Section step="1" title="Identificação" subtitle="Número, datas e dados de quem presta o serviço"><Grid><Field label="Número da proposta"><Input value={quote.number} onChange={(e) => update("number", e.target.value)} /></Field><Field label="Data de emissão"><Input type="date" value={quote.issueDate} onChange={(e) => update("issueDate", e.target.value)} /></Field><Field label="Válida até"><Input type="date" value={quote.validUntil} onChange={(e) => update("validUntil", e.target.value)} /></Field><Field label="Empresa / profissional"><Input value={quote.provider.name} onChange={(e) => updateParty("provider", "name", e.target.value)} /></Field><Field label="CPF / CNPJ"><Input value={quote.provider.document} onChange={(e) => updateParty("provider", "document", e.target.value)} /></Field><Field label="Telefone"><Input value={quote.provider.phone} onChange={(e) => updateParty("provider", "phone", e.target.value)} /></Field><Field label="E-mail"><Input value={quote.provider.email} onChange={(e) => updateParty("provider", "email", e.target.value)} /></Field></Grid></Section>
+      <Section step="2" title="Cliente e local" subtitle="Dados exibidos no cabeçalho do orçamento"><Grid><Field label="Nome do cliente"><Input value={quote.customer.name} onChange={(e) => updateParty("customer", "name", e.target.value)} /></Field><Field label="CPF / CNPJ"><Input value={quote.customer.document} onChange={(e) => updateParty("customer", "document", e.target.value)} /></Field><Field label="WhatsApp"><Input value={quote.customer.phone} onChange={(e) => updateParty("customer", "phone", e.target.value)} /></Field><Field label="E-mail"><Input value={quote.customer.email} onChange={(e) => updateParty("customer", "email", e.target.value)} /></Field><Field label="Endereço do serviço" wide><Input value={quote.customer.address} onChange={(e) => updateParty("customer", "address", e.target.value)} /></Field></Grid></Section>
+      <Section step="3" title="Escopo e itens" subtitle="Quantidades, valores unitários e subtotais"><Grid><Field label="Tipo de serviço"><Input value={quote.serviceType} onChange={(e) => update("serviceType", e.target.value)} /></Field><Field label="Equipamento"><Input value={quote.equipment} onChange={(e) => update("equipment", e.target.value)} /></Field></Grid><div className="mt-4 space-y-3">{quote.items.map((item, index) => <article className="item-card" key={item.id}><div className="item-title"><strong>Item {index + 1}</strong><Button type="button" variant="ghost" size="icon-sm" onClick={() => update("items", quote.items.filter((entry) => entry.id !== item.id))}><Trash2 /></Button></div><Field label="Descrição"><Input value={item.description} onChange={(e) => updateItem(item.id, { description: e.target.value })} /></Field><div className="item-values"><Field label="Quantidade"><Input type="number" min="0.01" step="0.01" value={item.quantity} onChange={(e) => updateItem(item.id, { quantity: Number(e.target.value) })} /></Field><Field label="Unidade"><Input value={item.unit} onChange={(e) => updateItem(item.id, { unit: e.target.value })} /></Field><Field label="Valor unitário"><Input type="number" min="0" step="0.01" value={item.unitPrice} onChange={(e) => updateItem(item.id, { unitPrice: Number(e.target.value) })} /></Field></div><p className="item-subtotal">Subtotal <strong>{money.format(item.quantity * item.unitPrice)}</strong></p></article>)}</div><Button type="button" variant="outline" className="mt-3 w-full" onClick={() => update("items", [...quote.items, { id: uid(), description: "", quantity: 1, unit: "un", unitPrice: 0 }])}><Plus /> Adicionar item</Button></Section>
+      <Section step="4" title="Condições comerciais" subtitle="Pagamento, execução e observações"><Stack><Field label="Condições de pagamento"><Textarea value={quote.paymentTerms} onChange={(e) => update("paymentTerms", e.target.value)} /></Field><Field label="Prazo e condições de execução"><Textarea value={quote.executionTerms} onChange={(e) => update("executionTerms", e.target.value)} /></Field><Field label="Observações"><Textarea value={quote.notes} onChange={(e) => update("notes", e.target.value)} /></Field></Stack></Section>
+      <Section step="5" title="Escopo detalhado" subtitle="Use uma linha para cada item"><Stack><Field label="Itens inclusos"><Textarea className="min-h-40" value={quote.included} onChange={(e) => update("included", e.target.value)} /></Field><Field label="Não inclusos / exclusões"><Textarea className="min-h-40" value={quote.exclusions} onChange={(e) => update("exclusions", e.target.value)} /></Field></Stack></Section>
+      {status && <p className={`status ${status.includes("sucesso") || status.includes("criada") ? "status-ok" : "status-warn"}`}>{status}</p>}
+      <footer className="action-bar"><div className="mx-auto flex max-w-3xl items-center gap-3"><div className="min-w-0 flex-1"><p>Total da proposta</p><strong>{money.format(total)}</strong></div><Button type="button" onClick={exportPdf} variant="outline" className="h-12 rounded-2xl"><FileDown /><span className="hidden sm:inline">Só PDF</span></Button><Button type="submit" disabled={saving} className="h-12 rounded-2xl px-5 font-bold"><Save />{saving ? "Salvando..." : "Salvar + PDF"}</Button></div></footer>
+    </form>}
+  </main>;
+}
+
+function Section({ step, title, subtitle, children }: { step: string; title: string; subtitle: string; children: React.ReactNode }) { return <section className="card-section"><div className="section-heading"><span className="step">{step}</span><div><h2>{title}</h2><p>{subtitle}</p></div></div>{children}</section>; }
+function Field({ label, wide, children }: { label: string; wide?: boolean; children: React.ReactNode }) { return <label className={`field-label ${wide ? "sm:col-span-2" : ""}`}><span>{label}</span>{children}</label>; }
+function Grid({ children }: { children: React.ReactNode }) { return <div className="form-grid">{children}</div>; }
+function Stack({ children }: { children: React.ReactNode }) { return <div className="space-y-4">{children}</div>; }
+
+function HistoryView({ quotes, selected, status, onSelect, onClose, onDownload, onDuplicate }: { quotes: StoredQuote[]; selected: StoredQuote | null; status: string; onSelect: (quote: StoredQuote) => void; onClose: () => void; onDownload: (quote: StoredQuote) => void; onDuplicate: (quote: StoredQuote) => void }) {
+  if (selected) return <QuoteDetails stored={selected} onClose={onClose} onDownload={onDownload} onDuplicate={onDuplicate} />;
+  return <section className="mx-auto max-w-3xl space-y-4 px-4 py-5"><div><h1 className="text-2xl font-black">Orçamentos salvos</h1><p className="text-sm text-muted-foreground">Toque em um registro para consultar todos os dados.</p></div>{status && <p className="status status-ok">{status}</p>}{quotes.length === 0 ? <div className="card-section py-12 text-center"><History className="mx-auto mb-3 text-muted-foreground" /><p className="font-bold">Nenhum orçamento salvo</p></div> : quotes.map((stored) => <button type="button" key={stored.id} onClick={() => onSelect(stored)} className="history-card"><div><strong>{stored.customer_name}</strong><span>{stored.payload.quote?.number ?? "Registro antigo"} · {new Date(stored.created_at).toLocaleDateString("pt-BR")}</span></div><b>{money.format(stored.total)}</b></button>)}</section>;
+}
+
+function QuoteDetails({ stored, onClose, onDownload, onDuplicate }: { stored: StoredQuote; onClose: () => void; onDownload: (quote: StoredQuote) => void; onDuplicate: (quote: StoredQuote) => void }) {
+  const detail = quoteFromStored(stored);
+  const total = detail.items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+  return <section className="mx-auto max-w-3xl space-y-4 px-4 py-5"><div className="flex items-start justify-between"><div><p className="eyebrow text-primary">Detalhes do orçamento</p><h1 className="text-2xl font-black">{detail.customer.name}</h1><p className="text-sm text-muted-foreground">{detail.number} · {detail.issueDate}</p></div><Button variant="ghost" size="icon" onClick={onClose}><X /></Button></div><div className="detail-total"><span>Valor total</span><strong>{money.format(total)}</strong></div><Detail label="Cliente" value={[detail.customer.document, detail.customer.phone, detail.customer.email, detail.customer.address].filter(Boolean).join(" · ")} /><Detail label="Serviço" value={`${detail.serviceType} · ${detail.equipment}`} /><section className="card-section"><h2 className="mb-3 font-black">Itens</h2>{detail.items.map((item) => <div key={item.id} className="detail-item"><div><strong>{item.description}</strong><span>{item.quantity} {item.unit} × {money.format(item.unitPrice)}</span></div><b>{money.format(item.quantity * item.unitPrice)}</b></div>)}</section><Detail label="Pagamento" value={detail.paymentTerms} /><Detail label="Prazo / execução" value={detail.executionTerms} /><Detail label="Itens inclusos" value={detail.included} pre /><Detail label="Não inclusos / exclusões" value={detail.exclusions} pre /><Detail label="Observações" value={detail.notes} /><div className="grid gap-3 sm:grid-cols-2"><Button className="h-12 rounded-2xl" onClick={() => onDownload(stored)}><FileDown /> Baixar PDF novamente</Button><Button variant="outline" className="h-12 rounded-2xl" onClick={() => onDuplicate(stored)}><Copy /> Duplicar e editar</Button></div></section>;
+}
+function Detail({ label, value, pre }: { label: string; value: string; pre?: boolean }) { return <section className="card-section"><h2 className="text-xs font-black uppercase tracking-wider text-primary">{label}</h2><p className={`mt-2 text-sm ${pre ? "whitespace-pre-line" : ""}`}>{value || "Não informado"}</p></section>; }
