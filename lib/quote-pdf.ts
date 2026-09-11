@@ -5,24 +5,27 @@ import type { jsPDF as JsPdfType } from "jspdf";
 const JsPdf = jsPdfModule.jsPDF ?? (jsPdfModule.default as unknown as { jsPDF: typeof jsPdfModule.jsPDF }).jsPDF;
 const autoTable = autoTableModule.autoTable ?? autoTableModule.default;
 
-export type QuoteItem = { id: string; description: string; quantity: number; unit: string; unitPrice: number };
+export type QuoteItem = { id: string; description: string; quantity: number; unit: string; unitPrice: number; kind?: "charge" | "discount" };
 export type QuoteDocument = {
   number: string; issueDate: string; validUntil: string;
   customer: { name: string; document: string; phone: string; email: string; address: string };
   provider: { name: string; document: string; phone: string; email: string };
   serviceType: string; equipment: string; items: QuoteItem[];
+  installationCapacity?: "9000" | "12000" | "18000" | "22000";
+  installationLayout?: "wall-to-wall" | "evaluation";
   paymentTerms: string; executionTerms: string; included: string; exclusions: string; notes: string;
 };
 
 const brl = (value: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value || 0);
 const cleanLines = (value: string) => value.split("\n").map((line) => line.trim()).filter(Boolean);
+export const quoteItemTotal = (item: QuoteItem) => item.quantity * item.unitPrice * (item.kind === "discount" ? -1 : 1);
 
 export function buildQuotePdf(quote: QuoteDocument) {
   const doc = new JsPdf({ unit: "mm", format: "a4" });
   const navy: [number, number, number] = [15, 42, 61], teal: [number, number, number] = [14, 116, 118], pale: [number, number, number] = [235, 247, 246];
   const ink: [number, number, number] = [34, 48, 58], muted: [number, number, number] = [96, 112, 121];
   const margin = 16, pageWidth = 178;
-  const total = quote.items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+  const total = quote.items.reduce((sum, item) => sum + quoteItemTotal(item), 0);
   const footer = () => {
     doc.setDrawColor(213, 224, 226).line(margin, 284, 194, 284);
     doc.setFontSize(8).setTextColor(...muted).text(`${quote.provider.name || "Clima Orçamentos"} · Proposta ${quote.number}`, margin, 290);
@@ -48,7 +51,7 @@ export function buildQuotePdf(quote: QuoteDocument) {
   autoTable(doc, {
     startY: 105, margin: { left: margin, right: margin },
     head: [["ITEM / SERVIÇO", "QTD.", "UN.", "VALOR UNIT.", "SUBTOTAL"]],
-    body: quote.items.map((item) => [item.description || "Item sem descrição", item.quantity.toLocaleString("pt-BR"), item.unit, brl(item.unitPrice), brl(item.quantity * item.unitPrice)]),
+    body: quote.items.map((item) => [item.kind === "discount" ? `DESCONTO — ${item.description}` : item.description || "Item sem descrição", item.quantity.toLocaleString("pt-BR"), item.unit, brl(item.kind === "discount" ? -item.unitPrice : item.unitPrice), brl(quoteItemTotal(item))]),
     styles: { font: "helvetica", fontSize: 8.5, cellPadding: 3.2, textColor: ink, lineColor: [220, 228, 230], lineWidth: 0.15 },
     headStyles: { fillColor: navy, textColor: 255, fontStyle: "bold", fontSize: 7.5 }, alternateRowStyles: { fillColor: [247, 250, 250] },
     columnStyles: { 0: { cellWidth: 84 }, 1: { halign: "center", cellWidth: 16 }, 2: { halign: "center", cellWidth: 16 }, 3: { halign: "right", cellWidth: 29 }, 4: { halign: "right", cellWidth: 33, fontStyle: "bold" } },
